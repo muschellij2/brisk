@@ -3,6 +3,7 @@ library(genefilter)
 library(miscTools)
 library(ggplot2)
 library(reshape2)
+library(shinyIncubator)
 options(shiny.maxRequestSize=100*1024^2) 
 
 
@@ -21,7 +22,7 @@ get.file = function(iput){
   return(outfile)
 }
 
-run.data = function(file_list, roifile, bg.value, type){
+run.data = function(file_list, roifile, bg.value, type, session=NA){
   
   nfiles = length(file_list)
   roi = readNIfTI(roifile, reorient=FALSE)
@@ -33,35 +34,67 @@ run.data = function(file_list, roifile, bg.value, type){
     which(roi %in% lev, arr.ind=FALSE)
   })
   
-
+  
   ifile = 1;
   cor.res = l.res = vector(mode="list", length = nfiles)
-#   pb = txtProgressBar(min=0, max=nfiles,initial=0)
-  for (ifile in seq(nfiles)){
-    print(ifile)
-    img = readNIfTI(file_list[ifile], reorient=FALSE)
+  #   pb = txtProgressBar(min=0, max=nfiles,initial=0)
+  if (!is.environment(session)){
     
-    ### V by T
-    mat = matrix(img, nrow=prod(dim(img)[1:3]), ncol=ntim(img))
-    ### double check
-    x = img[,,,1]
-    stopifnot(all(x == mat[,1]))
-    # [1] TRUE
+    for (ifile in seq(nfiles)){
+      print(ifile)
+      img = readNIfTI(file_list[ifile], reorient=FALSE)
+      
+      ### V by T
+      mat = matrix(img, nrow=prod(dim(img)[1:3]), ncol=ntim(img))
+      ### double check
+      x = img[,,,1]
+      stopifnot(all(x == mat[,1]))
+      # [1] TRUE
+      
+      ### resmat is T by R (n roi)
+      resmat = sapply(roi.ind, function(indices){
+        m = mat[indices,, drop=FALSE]
+        res = switch(type,
+                     "median" = apply(m, 2, median),
+                     "mean"= colMeans(m),
+        )
+      })
+      #     colnames(resmat) = ulev
+      l.res[[ifile]] <<- resmat
+    } 
+  } else {
+    withProgress(session, min=0, max=nfiles, expr={
+      
+      for (ifile in seq(nfiles)){
+        print(ifile)
+        setProgress(message = paste0('Reading file'),
+                    detail = paste0(ifile, " of ", nfiles),
+                    value=ifile)           
+        img = readNIfTI(file_list[ifile], reorient=FALSE)
+        
+        ### V by T
+        mat = matrix(img, nrow=prod(dim(img)[1:3]), ncol=ntim(img))
+        ### double check
+        x = img[,,,1]
+        stopifnot(all(x == mat[,1]))
+        # [1] TRUE
+        
+        ### resmat is T by R (n roi)
+        resmat = sapply(roi.ind, function(indices){
+          m = mat[indices,, drop=FALSE]
+          res = switch(type,
+                       "median" = apply(m, 2, median),
+                       "mean"= colMeans(m),
+          )
+        })
+        
+        #         print(ifile)
+        Sys.sleep(0.1)        
+        #     colnames(resmat) = ulev
+        l.res[[ifile]] <<- resmat
+      }    
+    })
     
-    ### resmat is T by R (n roi)
-    resmat = sapply(roi.ind, function(indices){
-      m = mat[indices,, drop=FALSE]
-      res = switch(type,
-                   "median" = apply(m, 2, median),
-                   "mean"= colMeans(m),
-      )
-    })
-#     setTxtProgressBar(pb, va)
-    output$pbar = reactiveText({
-      ifile
-    })
-#     colnames(resmat) = ulev
-    l.res[[ifile]] = resmat
   }
   names(l.res) = file_list
   return(list(l.res=l.res, ulev = ulev))
@@ -70,7 +103,7 @@ run.data = function(file_list, roifile, bg.value, type){
 shinyServer(function(input, output, session) {
   # output$filetable <- renderTable({
   extract.data = reactive({
-  
+    
     
     file_list = input$file_list
     print(file_list)
@@ -86,21 +119,21 @@ shinyServer(function(input, output, session) {
       stopifnot(all(file.exists(file_list)))
       
       ###
-#       roifile = read.csv(get.file(input$roifile), header=FALSE, 
-#                          stringsAsFactors=FALSE)[1,1]
-#       roifile = read.csv(input$roifile, header=FALSE, 
-#                          stringsAsFactors=FALSE)[1,1]      
+      #       roifile = read.csv(get.file(input$roifile), header=FALSE, 
+      #                          stringsAsFactors=FALSE)[1,1]
+      #       roifile = read.csv(input$roifile, header=FALSE, 
+      #                          stringsAsFactors=FALSE)[1,1]      
       roifile = get.niifile(input$roifile)
       print("ROI File is")      
       print(roifile)
-#       dir(basename(roifile))
-#       print(file.exists(roifile))
+      #       dir(basename(roifile))
+      #       print(file.exists(roifile))
       stopifnot(all(file.exists(roifile)))
-
+      
       bg.value = input$bg.value
       type = input$type
-
-      rr = run.data(file_list, roifile, bg.value, type)
+      
+      rr = run.data(file_list, roifile, bg.value, type, session)
       l.res = rr$l.res
       ulev = rr$ulev
     } else {
@@ -112,32 +145,32 @@ shinyServer(function(input, output, session) {
                 ulev=ulev,
                 roifilename = roifilename))
   })
-
-
-	# Partial example
-
+  
+  
+  # Partial example
+  
   output$outtab = renderTable({
     out = extract.data()
     l.res = out$l.res
     if (!is.null(l.res)){
       df = data.frame(l.res[[1]][1:5, 1:5])
-    return(df)
+      return(df)
     } else {
       return(data.frame("No Data"))
     }
   }, include.rownames=FALSE, sanitize.text.function=`(`)
-
-
-
+  
+  
+  
   output$outplot = renderPlot({
     out = extract.data()
     l.res = out$l.res
     x = l.res[[1]]
     ulev = out$ulev
     if (!is.null(x)){
-#       cat("l.res is")
-#       print(l.res)
-#       print(is.null(l.res))
+      #       cat("l.res is")
+      #       print(l.res)
+      #       print(is.null(l.res))
       xx = melt(x)
       colnames(xx) = c("Scan", "roi", "value")
       xx$roi = factor(xx$roi)
@@ -147,14 +180,14 @@ shinyServer(function(input, output, session) {
         geom_line(alpha = .5) + guides(color=FALSE) +
         ylab("Signal")
       print(g)
-#       matplot(x)      
+      #       matplot(x)      
     } else {
       plot.new()
       text(0.5,0.5,"no data")
     }
   })
-
-
+  
+  
   output$dlrda <- downloadHandler(
     filename = function() {
       dt = format(Sys.time(), "%Y%m%d_%H%M")
@@ -170,5 +203,5 @@ shinyServer(function(input, output, session) {
       save(out, rundate, file=file)
     }
   )
-
+  
 })

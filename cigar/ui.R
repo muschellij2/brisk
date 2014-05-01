@@ -1,5 +1,5 @@
 types = c("mean", "median")
-bgvals = c(NA, 0, NaN)
+bgvals = c("NA" = NA, "0" =0, "NaN" = NaN)
 
 
 shinyUI(pageWithSidebar(
@@ -11,15 +11,16 @@ shinyUI(pageWithSidebar(
               multiple = TRUE),    
     selectInput("type", "Summary for ROI:",
                 choices = types, selected=types[1]),
-    selectInput("bg.value", "Background Value for ROI:",
-                choices= bgvals, selected=bgvals[1]),
+    checkboxGroupInput("bg.value", "Background Value for ROI:",
+                       choices= bgvals, selected=bgvals),
     textInput("fname", "Name for output (will be date_stamped)",
-                value = ""),    
+              value = "output"),    
     downloadButton("dlrda", "Download rda of ROI timeseries")   
   ),
   mainPanel(
-#     plotOutput("outplot"),
-    textOutput("pbar"),
+    #     plotOutput("outplot"),
+    #     textOutput("pbar"),
+    progressInit(),    
     tableOutput("outtab")
   )
 ))
