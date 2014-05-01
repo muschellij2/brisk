@@ -33,7 +33,7 @@ run.data = function(file_list, roifile, bg.value, type, session=NA){
   roi.ind = lapply(ulev, function(lev){
     which(roi %in% lev, arr.ind=FALSE)
   })
-  
+  names(roi.ind) = ulev  
   
   ifile = 1;
   cor.res = l.res = vector(mode="list", length = nfiles)
@@ -97,7 +97,7 @@ run.data = function(file_list, roifile, bg.value, type, session=NA){
     
   }
   names(l.res) = file_list
-  return(list(l.res=l.res, ulev = ulev))
+  return(list(l.res=l.res, ulev = ulev, roi.ind = roi.ind))
 }
 
 shinyServer(function(input, output, session) {
@@ -136,14 +136,17 @@ shinyServer(function(input, output, session) {
       rr = run.data(file_list, roifile, bg.value, type, session)
       l.res = rr$l.res
       ulev = rr$ulev
+      roi.ind = rr$roi.ind
     } else {
       l.res = list(NULL)
       ulev = NULL
+      roi.ind = NULL
     }
     return(list(l.res=l.res, 
                 file_list=file_list, 
                 ulev=ulev,
-                roifilename = roifilename))
+                roifilename = roifilename,
+                roi.ind = roi.ind))
   })
   
   
@@ -151,12 +154,16 @@ shinyServer(function(input, output, session) {
   
   output$outtab = renderTable({
     out = extract.data()
-    l.res = out$l.res
-    if (!is.null(l.res)){
-      df = data.frame(l.res[[1]][1:5, 1:5])
+    roi.ind = out$roi.ind
+    if (!is.null(roi.ind)){
+      tab = sapply(roi.ind, length)
+      print(tab)
+      df = data.frame(nvoxels=tab)
+      df$roi.name = names(roi.ind)
+      df = df[, c("roi.name", "nvoxels")]
       return(df)
     } else {
-      return(data.frame("No Data"))
+      return(data.frame(Message="No Data"))
     }
   }, include.rownames=FALSE, sanitize.text.function=`(`)
   
